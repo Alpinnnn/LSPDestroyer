@@ -2,6 +2,9 @@ from __future__ import annotations
 
 
 SPECIAL_VK_CODES = {
+    "Tab": 0x09,
+    "Escape": 0x1B,
+    "CapsLock": 0x14,
     "PageUp": 0x21,
     "PageDown": 0x22,
     "End": 0x23,
@@ -9,6 +12,8 @@ SPECIAL_VK_CODES = {
     "Insert": 0x2D,
     "Delete": 0x2E,
     "Pause": 0x13,
+    "NumLock": 0x90,
+    "ScrollLock": 0x91,
     "Space": 0x20,
     "Enter": 0x0D,
     "Backspace": 0x08,
@@ -21,10 +26,25 @@ VK_NAME_TO_CODE = {
 }
 VK_CODE_TO_NAME = {code: name for name, code in VK_NAME_TO_CODE.items()}
 KEY_TOKEN_ALIASES = {
+    "tab": "Tab",
+    "esc": "Escape",
+    "escape": "Escape",
+    "capslock": "CapsLock",
+    "caps_lock": "CapsLock",
+    "numlock": "NumLock",
+    "num_lock": "NumLock",
+    "scrolllock": "ScrollLock",
+    "scroll_lock": "ScrollLock",
+    "prior": "PageUp",
     "pageup": "PageUp",
     "pgup": "PageUp",
+    "next": "PageDown",
     "pagedown": "PageDown",
     "pgdn": "PageDown",
+    "kp_home": "Home",
+    "kp_end": "End",
+    "kp_insert": "Insert",
+    "kp_delete": "Delete",
     "ins": "Insert",
     "insert": "Insert",
     "del": "Delete",

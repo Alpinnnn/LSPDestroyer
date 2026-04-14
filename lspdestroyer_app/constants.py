@@ -8,7 +8,7 @@ APP_TITLE = "LSPDestroyer"
 DEFAULT_MAIN_GEOMETRY = "960x540"
 DEFAULT_SETTINGS_GEOMETRY = "520x420"
 STARTUP_NOTIFICATION = (
-    "LSPDestroyer berjalan di system tray. Ctrl+O buka UI, Ctrl+F pilih file."
+    "LSPDestroyer berjalan di system tray. Ctrl+O buka UI, Ctrl+F Silent Open file."
 )
 CONFIG_FILE_NAME = "config.json"
 SUPPORTED_FILE_TYPES = [

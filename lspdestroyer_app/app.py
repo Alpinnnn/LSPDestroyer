@@ -33,7 +33,7 @@ class LspDestroyerApp:
         "show_main_ui": "Open main UI",
         "toggle_visibility": "Show/hide all UI (except overlay)",
         "open_settings": "Open settings",
-        "select_file": "Select file",
+        "select_file": "Silent Open",
         "reset_file": "Reset active file",
         "pause_resume": "Pause / Resume",
         "toggle_overlay": "Show / hide next overlay",
@@ -948,9 +948,13 @@ class LspDestroyerApp:
         if self.preview_requires_confirmation:
             return (
                 "Klik kiri untuk pakai preview. "
-                f"Klik kanan atau {self.config.hotkeys.select_file} untuk pilih file lain."
+                "Klik kanan untuk pilih file preview lain. "
+                f"{self.config.hotkeys.select_file} = Silent Open langsung aktif."
             )
-        return f"Pilih file ({self.config.hotkeys.select_file})"
+        return (
+            "Pilih file preview dari UI. "
+            f"{self.config.hotkeys.select_file} = Silent Open langsung aktif."
+        )
 
     def _get_reset_button_tooltip(self) -> str:
         return f"Reset posisi karakter ({self.config.hotkeys.reset_file})"
@@ -1030,8 +1034,24 @@ class LspDestroyerApp:
                 button, active=field_name == self.active_hotkey_capture
             )
 
+    def _get_hotkey_action_label(self, action_name: str) -> str:
+        labels = {
+            "show_main": "Open main UI",
+            "toggle_visibility": "Show/hide all UI (except overlay)",
+            "show_settings": "Open settings",
+            "silent_open": "Silent Open",
+            "select_file": "Select file preview",
+            "reset_file": "Reset active file",
+            "pause_resume": "Pause / Resume",
+            "toggle_overlay": "Show / hide next overlay",
+            "exit_app": "Exit app",
+        }
+        return labels.get(action_name, action_name)
+
     def _begin_hotkey_capture(self, field_name: str) -> None:
         if self.active_hotkey_capture == field_name:
+            self._cancel_hotkey_capture()
+            self.set_status("Pemilihan hotkey dibatalkan.")
             return
 
         self._cancel_hotkey_capture()
@@ -1077,10 +1097,14 @@ class LspDestroyerApp:
         if keysym in {"Control_L", "Control_R", "Control"}:
             return None
 
+        normalized_key = normalize_key_token(keysym, allow_extended=True)
+        if normalized_key:
+            return normalized_key
+
         key_name = VK_CODE_TO_NAME.get(int(getattr(event, "keycode", 0)))
         if key_name:
             return key_name
-        return normalize_key_token(keysym)
+        return None
 
     def _find_hotkey_conflict(self, field_name: str, hotkey_value: str) -> str | None:
         modifiers, virtual_key = parse_hotkey_string(hotkey_value)
@@ -1865,7 +1889,7 @@ class LspDestroyerApp:
             ("Open main UI", self.config.hotkeys.show_main_ui, None),
             ("Show/hide all UI (except overlay)", self.config.hotkeys.toggle_visibility, None),
             ("Open settings", self.config.hotkeys.open_settings, None),
-            ("Select file", self.config.hotkeys.select_file, None),
+            ("Silent Open", self.config.hotkeys.select_file, None),
             ("Reset active file", self.config.hotkeys.reset_file, None),
             ("Pause / Resume", self.hotkey_vars["pause_resume"], "pause_resume"),
             ("Show / hide next overlay", self.hotkey_vars["toggle_overlay"], "toggle_overlay"),
@@ -2116,8 +2140,12 @@ class LspDestroyerApp:
         failed_actions = self.tray_icon.register_hotkeys(self.hotkey_actions)
         self.native_hotkeys_registered = len(self.tray_icon.hotkey_ids) > 0
         if failed_actions:
+            failed_labels = [
+                self._get_hotkey_action_label(action_name)
+                for action_name in failed_actions
+            ]
             self.status_text = (
-                f"Hotkey gagal diregister: {', '.join(failed_actions)}. Mungkin bentrok dengan app lain."
+                f"Hotkey gagal diregister: {', '.join(failed_labels)}. Mungkin bentrok dengan app lain."
             )
 
     def _mark_hotkey_trigger(self, action_name: str) -> bool:
@@ -2322,6 +2350,8 @@ class LspDestroyerApp:
             self.toggle_main_window()
         elif action_name == "show_settings":
             self.toggle_settings_window()
+        elif action_name == "silent_open":
+            self.silent_open_file_via_dialog()
         elif action_name == "select_file":
             self.select_file_via_dialog_from_ui()
         elif action_name == "toggle_visibility":
@@ -2345,7 +2375,7 @@ class LspDestroyerApp:
             ("show_main", self.config.hotkeys.show_main_ui),
             ("toggle_visibility", self.config.hotkeys.toggle_visibility),
             ("show_settings", self.config.hotkeys.open_settings),
-            ("select_file", self.config.hotkeys.select_file),
+            ("silent_open", self.config.hotkeys.select_file),
             ("reset_file", self.config.hotkeys.reset_file),
             ("pause_resume", self.config.hotkeys.pause_resume),
             ("toggle_overlay", self.config.hotkeys.toggle_overlay),
@@ -2579,34 +2609,65 @@ class LspDestroyerApp:
             self.set_status("UI dibalikin sesuai state terakhir.")
             self._refresh_overlay()
 
-    def select_file_via_dialog_from_ui(self) -> None:
-        parent_window = self.settings_window if self._window_is_visible(self.settings_window) else self.main_window
-        if not self._window_is_visible(parent_window):
-            self.show_main_window()
-            parent_window = self.main_window
-        selected = filedialog.askopenfilename(
-            parent=parent_window,
-            title="Pilih file untuk LSPDestroyer",
-            filetypes=SUPPORTED_FILE_TYPES,
-        )
-        if not selected:
-            self.set_status("Pemilihan file dibatalkan.")
-            return
+    def _show_file_dialog(self, *, parent_window: tk.Misc | None = None) -> str:
+        dialog_kwargs: dict[str, Any] = {
+            "title": "Pilih file untuk LSPDestroyer",
+            "filetypes": SUPPORTED_FILE_TYPES,
+        }
+        if parent_window is not None:
+            dialog_kwargs["parent"] = parent_window
+        return filedialog.askopenfilename(**dialog_kwargs)
 
-        path = Path(selected)
+    def _load_selected_file_into_preview(self, path: Path) -> bool:
         if not path.is_file():
             self.set_status("File tidak ditemukan.")
             messagebox.showerror(APP_TITLE, "File yang dipilih tidak ditemukan.")
-            return
+            return False
 
         text, encoding = load_text_file(path)
         self.preview_path = path
         self.preview_text_value = text
         self.preview_encoding = encoding
-        self.preview_requires_confirmation = True
         self._refresh_preview_view()
+        return True
+
+    def select_file_via_dialog_from_ui(self) -> None:
+        parent_window = self.settings_window if self._window_is_visible(self.settings_window) else self.main_window
+        if not self._window_is_visible(parent_window):
+            self.show_main_window()
+            parent_window = self.main_window
+        selected = self._show_file_dialog(parent_window=parent_window)
+        if not selected:
+            self.set_status("Pemilihan file dibatalkan.")
+            return
+
+        path = Path(selected)
+        if not self._load_selected_file_into_preview(path):
+            return
+
+        self.preview_requires_confirmation = True
         self._refresh_main_labels()
         self.set_status("Preview siap.")
+
+    def silent_open_file_via_dialog(self) -> None:
+        parent_window: tk.Misc | None = None
+        if self._window_is_visible(self.settings_window):
+            parent_window = self.settings_window
+        elif self._window_is_visible(self.main_window):
+            parent_window = self.main_window
+
+        selected = self._show_file_dialog(parent_window=parent_window)
+        if not selected:
+            self.set_status("Silent Open dibatalkan.")
+            return
+
+        path = Path(selected)
+        if not self._load_selected_file_into_preview(path):
+            return
+
+        self.preview_requires_confirmation = False
+        self.confirm_preview_file()
+        self.set_status("File aktif via Silent Open.")
 
     def confirm_preview_file(self) -> None:
         if not self.preview_text_value or not self.preview_path:

@@ -191,7 +191,7 @@ class SystemTrayIcon:
     def _show_menu(self, hwnd: int) -> None:
         menu = user32.CreatePopupMenu()
         user32.AppendMenuW(menu, MF_STRING, self.MENU_OPEN_MAIN, "Open Main UI")
-        user32.AppendMenuW(menu, MF_STRING, self.MENU_SELECT_FILE, "Select File")
+        user32.AppendMenuW(menu, MF_STRING, self.MENU_SELECT_FILE, "Select File Preview")
         user32.AppendMenuW(menu, MF_STRING, self.MENU_OPEN_SETTINGS, "Settings")
         user32.AppendMenuW(
             menu, MF_STRING, self.MENU_TOGGLE_VISIBILITY, "Toggle Overlay"

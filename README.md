@@ -24,6 +24,8 @@ that file.
 
 - Starts in the Windows system tray.
 - Global hotkeys registered with `RegisterHotKey`.
+- `Ctrl+F` Silent Open: open the native Windows file picker and activate the
+  selected file immediately without showing the app UI.
 - Low-level keyboard hook for character-by-character replay.
 - File preview before activation, with double-click activation support.
 - Context-aware preview header button: it appears when no file is active or a
@@ -75,7 +77,7 @@ These are the default hotkeys shown by the app.
 | Open or close main UI | `Ctrl+O` |
 | Hide or restore UI except overlay | `Ctrl+H` |
 | Open or close settings | `Ctrl+S` |
-| Select file | `Ctrl+F` |
+| Silent Open | `Ctrl+F` |
 | Reset active file | `Ctrl+Delete` |
 | Pause or resume typing | `Delete` |
 | Show or hide overlay | `Insert` |
@@ -101,16 +103,18 @@ show a warning in its status text.
 
 1. Start the app. It initializes in the tray and creates the main UI,
    settings window, and overlay.
-2. Select a file with `Ctrl+F` or from the tray menu.
-3. The file is loaded into the preview area first.
-4. Activate the preview with the preview header button or by double-clicking the
+2. Press `Ctrl+F` for Silent Open if you want to choose a file and activate it
+   immediately without showing the app UI.
+3. Use the tray menu or main UI if you want the preview-first workflow instead.
+4. In preview-first mode, the file is loaded into the preview area first.
+5. Activate the preview with the preview header button or by double-clicking the
    preview panel.
-5. Once the preview becomes the active file, the preview button hides itself
+6. Once the preview becomes the active file, the preview button hides itself
    until you load another preview or clear back to a state with no active file.
-6. Once active, printable key presses in other applications are intercepted.
-7. The original key is suppressed and the next character from the file is sent
+7. Once active, printable key presses in other applications are intercepted.
+8. The original key is suppressed and the next character from the file is sent
    with `SendInput`.
-8. The overlay and progress indicators update as you move through the file.
+9. The overlay and progress indicators update as you move through the file.
 
 ### Keys That Pass Through
 
