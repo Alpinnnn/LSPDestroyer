@@ -41,7 +41,7 @@ that file.
 ## Run From Source
 
 ```powershell
-git clone https://github.com/your-username/lspdestroyer.git
+git clone https://github.com/Alpinnnn/LSPDestroyer
 cd lspdestroyer
 python lspdestroyer.py
 ```
