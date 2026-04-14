@@ -515,8 +515,18 @@ class LspDestroyerApp:
         slider_shell = tk.Frame(parent, bg=parent.cget("bg"), bd=0)
         slider_shell.grid(row=row, column=1, sticky="ew", pady=8)
         slider_shell.columnconfigure(0, weight=1)
-        tk.Scale(
+        slider_surface = tk.Frame(
             slider_shell,
+            bg=SLIDER_PANEL,
+            highlightthickness=1,
+            highlightbackground=SLIDER_BORDER,
+            highlightcolor=SLIDER_BORDER,
+            bd=0,
+        )
+        slider_surface.grid(row=0, column=0, sticky="ew")
+        slider_surface.columnconfigure(0, weight=1)
+        tk.Scale(
+            slider_surface,
             from_=from_,
             to=to,
             orient="horizontal",
@@ -524,15 +534,18 @@ class LspDestroyerApp:
             showvalue=False,
             variable=variable,
             command=lambda _value: self._sync_overlay_value_labels(),
-            bg=parent.cget("bg"),
-            fg=TEXT_MUTED,
-            activebackground=BUTTON_ACCENT,
+            bg=SLIDER_THUMB,
+            fg=TEXT_PRIMARY,
+            activebackground=SLIDER_THUMB_ACTIVE,
             highlightthickness=0,
             bd=0,
-            troughcolor=CARD_BACKGROUND_ALT,
-            sliderrelief="flat",
+            troughcolor=SLIDER_TRACK,
+            sliderrelief="raised",
+            sliderlength=28,
+            width=12,
             length=280,
-        ).grid(row=0, column=0, sticky="ew")
+            cursor="hand2",
+        ).grid(row=0, column=0, sticky="ew", padx=8, pady=6)
         tk.Label(
             slider_shell,
             textvariable=value_variable,
@@ -1994,6 +2007,10 @@ class LspDestroyerApp:
             actions, text="Restore Defaults", command=self.restore_default_settings
         )
         restore_button.pack(side="left", padx=(0, 10))
+        close_button = self._create_action_button(
+            actions, text="Close Setting", command=self.hide_settings_window
+        )
+        close_button.pack(side="left", padx=(0, 10))
         save_button = self._create_action_button(
             actions, text="Save Settings", command=self.save_settings, accent=True
         )

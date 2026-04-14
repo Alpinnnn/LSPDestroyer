@@ -25,11 +25,18 @@ that file.
 - Starts in the Windows system tray.
 - Global hotkeys registered with `RegisterHotKey`.
 - Low-level keyboard hook for character-by-character replay.
-- File preview before activation.
+- File preview before activation, with double-click activation support.
+- Context-aware preview header button: it appears when no file is active or a
+  preview is waiting to be activated, then hides itself once an active file is
+  already in use and no preview is pending.
 - Transparent always-on-top overlay that shows the next character(s).
 - Pause/resume, reset, show/hide overlay, and hide/restore UI controls.
+- Editable hotkeys for `Pause / Resume` and `Show / hide next overlay`
+  directly from the Settings window.
+- Overlay controls for font size, opacity, and vertical padding via sliders,
+  plus a color picker for text color.
 - UTF-8, UTF-8 BOM, and CP1252 file loading, with replacement fallback.
-- Overlay settings persisted in `%LOCALAPPDATA%\lspdestroyer\config.json`.
+- Hotkey and overlay settings persisted in `%LOCALAPPDATA%\lspdestroyer\config.json`.
 - Hidden `--self-test` mode for a startup smoke test.
 
 ## Requirements
@@ -61,7 +68,7 @@ lspdestroyer
 
 ## Default Hotkeys
 
-These hotkeys are displayed in the Settings window and are fixed from the UI.
+These are the default hotkeys shown by the app.
 
 | Action | Hotkey |
 | --- | --- |
@@ -74,6 +81,19 @@ These hotkeys are displayed in the Settings window and are fixed from the UI.
 | Show or hide overlay | `Insert` |
 | Exit application | `Ctrl+Enter` |
 
+`Pause or resume typing` and `Show or hide overlay` can be changed from the
+Settings window by clicking the current hotkey value and pressing a new key.
+
+Hotkey rules for the in-app editor:
+
+- Character-producing keys in the typing whitelist cannot be used on their own.
+- Those keys are allowed when combined with `Ctrl`.
+- If you press `Ctrl` first, the UI shows `Ctrl + ...`.
+- If `Ctrl` is released before a second key is chosen, the capture is canceled
+  and the original hotkey is restored.
+- Plain `Backspace` is blocked as a hotkey because it is reserved for moving
+  back one character in the active file.
+
 If a hotkey conflicts with another app, registration can fail and the app will
 show a warning in its status text.
 
@@ -83,12 +103,14 @@ show a warning in its status text.
    settings window, and overlay.
 2. Select a file with `Ctrl+F` or from the tray menu.
 3. The file is loaded into the preview area first.
-4. Activate the preview with the "Select File" button or by double-clicking the
+4. Activate the preview with the preview header button or by double-clicking the
    preview panel.
-5. Once active, printable key presses in other applications are intercepted.
-6. The original key is suppressed and the next character from the file is sent
+5. Once the preview becomes the active file, the preview button hides itself
+   until you load another preview or clear back to a state with no active file.
+6. Once active, printable key presses in other applications are intercepted.
+7. The original key is suppressed and the next character from the file is sent
    with `SendInput`.
-7. The overlay and progress indicators update as you move through the file.
+8. The overlay and progress indicators update as you move through the file.
 
 ### Keys That Pass Through
 
@@ -105,13 +127,13 @@ moves the current file position back by one character.
 
 ## Overlay Settings
 
-The overlay configuration is stored at:
+The app configuration is stored at:
 
 ```text
 %LOCALAPPDATA%\lspdestroyer\config.json
 ```
 
-Current configurable fields and defaults:
+Overlay fields and defaults:
 
 | Setting | Type | Default |
 | --- | --- | --- |
@@ -126,6 +148,14 @@ Current configurable fields and defaults:
 
 `x_position` and `y_position` default to `-1`, which means the overlay is
 auto-centered until you drag it somewhere else.
+
+Settings UI overview:
+
+- `Font size`, `Opacity`, and `Vertical padding` use slider controls.
+- `Text color` uses a color picker.
+- `Horizontal padding` and `Total next characters` stay as direct numeric input.
+- `Pause / Resume` and `Show / hide next overlay` hotkeys can be edited from
+  the same Settings window.
 
 ## Project Layout
 
