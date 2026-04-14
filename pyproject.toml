@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lspdestroyer"
+name = "LSPDestroyer"
 version = "0.1.0"
-description = "Windows tray utility that types file contents into the foreground application."
+description = "LSPDestroyer is a Windows tray utility that types file contents into the foreground application."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

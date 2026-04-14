@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-from .constants import APP_TITLE, CONFIG_FILE_NAME
+from .constants import APP_ID, CONFIG_FILE_NAME
 
 
 @dataclass
@@ -40,7 +40,7 @@ class AppConfig:
 
 def get_config_path() -> Path:
     base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
-    config_dir = base / APP_TITLE
+    config_dir = base / APP_ID
     config_dir.mkdir(parents=True, exist_ok=True)
     return config_dir / CONFIG_FILE_NAME
 

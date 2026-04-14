@@ -9,9 +9,9 @@
 [![Dependencies 0](https://img.shields.io/badge/Dependencies-0-0f766e?style=for-the-badge)](#requirements)
 [![Built with Tkinter](https://img.shields.io/badge/UI-Tkinter-f59e0b?style=for-the-badge)](#module-summary)
 [![Win32 Hooks](https://img.shields.io/badge/Backend-Win32%20Hooks-7c3aed?style=for-the-badge)](#how-it-works)
-[![Status Active](https://img.shields.io/badge/Status-Active%20Development-2563eb?style=for-the-badge)](#development-notes)
+[![Status Finished](https://img.shields.io/badge/Status-Finished-16a34a?style=for-the-badge)](#development-notes)
 
-`lspdestroyer` is a Windows tray utility that replays the contents of a text file
+`LSPDestroyer` is a Windows tray utility that replays the contents of a text file
 into the currently focused application, one character at a time.
 
 </div>
@@ -42,7 +42,7 @@ that file.
 
 ```powershell
 git clone https://github.com/Alpinnnn/LSPDestroyer
-cd lspdestroyer
+cd LSPDestroyer
 python lspdestroyer.py
 ```
 
@@ -98,7 +98,7 @@ The hook intentionally does not replace:
 - Most non-character keys such as arrows, function keys, and escape
 - Ctrl-based combinations
 - Injected input events
-- Input while `lspdestroyer` itself is focused
+- Input while `LSPDestroyer` itself is focused
 
 Backspace is handled specially: it sends a real backspace to the target app and
 moves the current file position back by one character.
@@ -174,7 +174,7 @@ To build a standalone executable:
 
 ```powershell
 pip install pyinstaller
-pyinstaller --noconsole --onefile --name lspdestroyer --collect-data lspdestroyer_app lspdestroyer.py
+pyinstaller --noconsole --onefile --name LSPDestroyer --collect-data lspdestroyer_app lspdestroyer.py
 ```
 
 ## License

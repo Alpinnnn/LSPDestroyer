@@ -3,11 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 
-APP_TITLE = "lspdestroyer"
+APP_ID = "lspdestroyer"
+APP_TITLE = "LSPDestroyer"
 DEFAULT_MAIN_GEOMETRY = "960x540"
 DEFAULT_SETTINGS_GEOMETRY = "520x420"
 STARTUP_NOTIFICATION = (
-    "lspdestroyer berjalan di system tray. Ctrl+O buka UI, Ctrl+F pilih file."
+    "LSPDestroyer berjalan di system tray. Ctrl+O buka UI, Ctrl+F pilih file."
 )
 CONFIG_FILE_NAME = "config.json"
 SUPPORTED_FILE_TYPES = [

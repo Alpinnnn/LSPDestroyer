@@ -1,4 +1,4 @@
-"""Tkinter application runtime for lspdestroyer."""
+"""Tkinter application runtime for LSPDestroyer."""
 
 from __future__ import annotations
 
@@ -2152,7 +2152,7 @@ class LspDestroyerApp:
             parent_window = self.main_window
         selected = filedialog.askopenfilename(
             parent=parent_window,
-            title="Pilih file untuk lspdestroyer",
+            title="Pilih file untuk LSPDestroyer",
             filetypes=SUPPORTED_FILE_TYPES,
         )
         if not selected:

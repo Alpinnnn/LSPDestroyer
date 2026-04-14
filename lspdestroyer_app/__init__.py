@@ -1,4 +1,4 @@
-"""Internal package for the lspdestroyer desktop utility."""
+"""Internal package for the LSPDestroyer desktop utility."""
 
 __all__ = ["__version__"]
 

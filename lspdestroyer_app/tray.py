@@ -8,7 +8,7 @@ import os
 import queue
 from typing import Any
 
-from .constants import APP_TITLE, STARTUP_NOTIFICATION
+from .constants import APP_ID, APP_TITLE, STARTUP_NOTIFICATION
 from .hotkeys import MOD_NOREPEAT
 from .win32 import (
     IDI_APPLICATION,
@@ -61,7 +61,7 @@ class SystemTrayIcon:
         self.hwnd: int | None = None
         self.icon_added = False
         self._instance = kernel32.GetModuleHandleW(None)
-        self._class_name = f"{APP_TITLE}-tray-{os.getpid()}"
+        self._class_name = f"{APP_ID}-tray-{os.getpid()}"
         self._wndproc = WndProcType(self._window_proc)
         self._notify_data = NOTIFYICONDATAW()
         self.hotkey_ids: dict[int, str] = {}
