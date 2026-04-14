@@ -4,7 +4,7 @@
 
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](#requirements)
 [![Windows 10/11](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)](#requirements)
-[![Version 0.1.0](https://img.shields.io/badge/Version-0.1.0-111827?style=for-the-badge)](#install-as-a-package)
+[![Version 0.1.3](https://img.shields.io/badge/Version-0.1.3-111827?style=for-the-badge)](#install-as-a-package)
 [![License MIT](https://img.shields.io/badge/License-MIT-16a34a?style=for-the-badge)](LICENSE)
 [![Dependencies 0](https://img.shields.io/badge/Dependencies-0-0f766e?style=for-the-badge)](#requirements)
 [![Built with Tkinter](https://img.shields.io/badge/UI-Tkinter-f59e0b?style=for-the-badge)](#module-summary)

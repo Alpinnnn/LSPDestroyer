@@ -19,6 +19,7 @@ VK_NAME_TO_CODE = {
     **{chr(code): code for code in range(ord("A"), ord("Z") + 1)},
     **{str(number): ord(str(number)) for number in range(10)},
 }
+VK_CODE_TO_NAME = {code: name for name, code in VK_NAME_TO_CODE.items()}
 KEY_TOKEN_ALIASES = {
     "pageup": "PageUp",
     "pgup": "PageUp",

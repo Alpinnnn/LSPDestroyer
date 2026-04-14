@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "LSPDestroyer"
-version = "0.1.0"
+version = "0.1.3"
 description = "LSPDestroyer is a Windows tray utility that types file contents into the foreground application."
 readme = "README.md"
 requires-python = ">=3.11"

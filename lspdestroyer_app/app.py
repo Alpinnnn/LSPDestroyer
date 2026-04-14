@@ -10,18 +10,36 @@ import queue
 import time
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import filedialog, messagebox, ttk
+from tkinter import colorchooser, filedialog, messagebox, ttk
 from typing import Any
 import winsound
 
-from .config import AppConfig, OverlayConfig, load_config, save_config
+from .config import AppConfig, HotkeyConfig, OverlayConfig, load_config, save_config
 from .constants import *  # Shared UI palette and layout constants.
-from .hotkeys import MODIFIER_KEY_CODES, OPERATIONAL_VK_CODES, VK_BACKSPACE, parse_hotkey_string
+from .hotkeys import (
+    MODIFIER_KEY_CODES,
+    OPERATIONAL_VK_CODES,
+    VK_BACKSPACE,
+    VK_CODE_TO_NAME,
+    normalize_key_token,
+    parse_hotkey_string,
+)
 from .text_utils import describe_character, load_text_file, mix_color
 from .tray import SystemTrayIcon
 from .win32 import *  # Win32 bindings mirror the legacy single-file layout.
 
 class LspDestroyerApp:
+    HOTKEY_LABELS = {
+        "show_main_ui": "Open main UI",
+        "toggle_visibility": "Show/hide all UI (except overlay)",
+        "open_settings": "Open settings",
+        "select_file": "Select file",
+        "reset_file": "Reset active file",
+        "pause_resume": "Pause / Resume",
+        "toggle_overlay": "Show / hide next overlay",
+        "exit_app": "Exit app",
+    }
+
     def __init__(self, *, self_test: bool = False) -> None:
         enable_dpi_awareness()
         self.self_test = self_test
@@ -62,10 +80,13 @@ class LspDestroyerApp:
         self.overlay_drag_origin = {"x": 0, "y": 0, "window_x": 0, "window_y": 0}
         self.hotkey_last_triggered: dict[str, float] = {}
         self.active_hotkey_capture: str | None = None
+        self.hotkey_capture_original_value: str | None = None
+        self.hotkey_capture_ctrl_only = False
         self.typing_paused = False
         self.overlay_hidden = False
         self.main_tooltip_window: tk.Toplevel | None = None
         self.main_sidebar_buttons: dict[str, dict[str, Any]] = {}
+        self.hotkey_editor_buttons: dict[str, tk.Button] = {}
         self.preview_activate_widgets: list[tk.Widget] = []
 
         self.status_text = STARTUP_NOTIFICATION
@@ -77,13 +98,23 @@ class LspDestroyerApp:
         self.overlay_label_var = tk.StringVar(value="-")
 
         self.overlay_vars = {
-            "font_size": tk.StringVar(value=str(self.config.overlay.font_size)),
-            "opacity": tk.StringVar(value=str(self.config.overlay.opacity)),
-            "padding_x": tk.StringVar(value=str(self.config.overlay.padding_x)),
-            "padding_y": tk.StringVar(value=str(self.config.overlay.padding_y)),
+            "font_size": tk.IntVar(value=self.config.overlay.font_size),
+            "opacity": tk.DoubleVar(value=self.config.overlay.opacity),
+            "padding_x": tk.IntVar(value=self.config.overlay.padding_x),
+            "padding_y": tk.IntVar(value=self.config.overlay.padding_y),
             "text_color": tk.StringVar(value=self.config.overlay.text_color),
-            "next_char_count": tk.StringVar(value=str(self.config.overlay.next_char_count)),
+            "next_char_count": tk.IntVar(value=self.config.overlay.next_char_count),
         }
+        self.overlay_value_vars = {
+            "font_size": tk.StringVar(),
+            "opacity": tk.StringVar(),
+            "padding_y": tk.StringVar(),
+        }
+        self.hotkey_vars = {
+            "pause_resume": tk.StringVar(value=self.config.hotkeys.pause_resume),
+            "toggle_overlay": tk.StringVar(value=self.config.hotkeys.toggle_overlay),
+        }
+        self._sync_overlay_value_labels()
 
         # Hotkey actions map: action_name -> (modifiers, vk_code)
         self.hotkey_actions: dict[str, tuple[int, int]] = {}
@@ -97,6 +128,10 @@ class LspDestroyerApp:
         self._refresh_preview_view()
         self._refresh_main_labels()
         self._refresh_overlay()
+        self.root.bind_all("<KeyPress>", self._handle_hotkey_capture_keypress, add="+")
+        self.root.bind_all(
+            "<KeyRelease>", self._handle_hotkey_capture_keyrelease, add="+"
+        )
 
         self._start_tray()
         self.root.after(30, self._pump_tray_messages)
@@ -429,6 +464,103 @@ class LspDestroyerApp:
             highlightcolor=CARD_BORDER,
             font=FONT_BODY,
         )
+
+    def _style_hotkey_editor_button(
+        self, widget: tk.Button, *, active: bool = False
+    ) -> None:
+        background = BUTTON_ACCENT if active else CARD_BACKGROUND_ALT
+        active_background = BUTTON_ACCENT_ACTIVE if active else BUTTON_PRIMARY_ACTIVE
+        border = BUTTON_ACCENT_ACTIVE if active else mix_color(
+            CARD_BORDER, CARD_BACKGROUND_ALT, 0.72
+        )
+        widget.configure(
+            relief="flat",
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=border,
+            highlightcolor=border,
+            bg=background,
+            activebackground=active_background,
+            fg=TEXT_PRIMARY,
+            activeforeground=TEXT_PRIMARY,
+            font=FONT_BODY,
+            anchor="w",
+            justify="left",
+            padx=12,
+            pady=8,
+            cursor="hand2",
+        )
+
+    def _create_slider_setting(
+        self,
+        parent: tk.Widget,
+        *,
+        row: int,
+        label: str,
+        variable: tk.Variable,
+        value_variable: tk.StringVar,
+        from_: float,
+        to: float,
+        resolution: float,
+    ) -> None:
+        tk.Label(
+            parent,
+            text=label,
+            bg=parent.cget("bg"),
+            fg=TEXT_MUTED,
+            font=FONT_BODY,
+            anchor="w",
+        ).grid(row=row, column=0, sticky="w", padx=(0, 12), pady=8)
+
+        slider_shell = tk.Frame(parent, bg=parent.cget("bg"), bd=0)
+        slider_shell.grid(row=row, column=1, sticky="ew", pady=8)
+        slider_shell.columnconfigure(0, weight=1)
+        tk.Scale(
+            slider_shell,
+            from_=from_,
+            to=to,
+            orient="horizontal",
+            resolution=resolution,
+            showvalue=False,
+            variable=variable,
+            command=lambda _value: self._sync_overlay_value_labels(),
+            bg=parent.cget("bg"),
+            fg=TEXT_MUTED,
+            activebackground=BUTTON_ACCENT,
+            highlightthickness=0,
+            bd=0,
+            troughcolor=CARD_BACKGROUND_ALT,
+            sliderrelief="flat",
+            length=280,
+        ).grid(row=0, column=0, sticky="ew")
+        tk.Label(
+            slider_shell,
+            textvariable=value_variable,
+            bg=parent.cget("bg"),
+            fg=TEXT_PRIMARY,
+            font=FONT_BODY,
+            anchor="e",
+            width=8,
+        ).grid(row=0, column=1, sticky="e", padx=(12, 0))
+
+    def _sync_overlay_value_labels(self) -> None:
+        self.overlay_value_vars["font_size"].set(
+            f"{int(round(float(self.overlay_vars['font_size'].get())))} px"
+        )
+        self.overlay_value_vars["opacity"].set(
+            f"{float(self.overlay_vars['opacity'].get()):.2f}"
+        )
+        self.overlay_value_vars["padding_y"].set(
+            f"{int(round(float(self.overlay_vars['padding_y'].get())))} px"
+        )
+
+    def _refresh_color_picker_button(self) -> None:
+        if not hasattr(self, "overlay_color_button"):
+            return
+
+        current_color = self.overlay_vars["text_color"].get().strip()
+        self.overlay_color_button.configure(text=current_color)
+        self.overlay_color_swatch.configure(bg=current_color)
 
     def _draw_rounded_rectangle(
         self,
@@ -785,12 +917,19 @@ class LspDestroyerApp:
 
         cursor = "hand2" if self.preview_requires_confirmation else "arrow"
         title_color = MAIN_TEXT_PRIMARY if self.preview_text_value else MAIN_TEXT_SUBTLE
+        show_select_button = self.preview_requires_confirmation or not bool(
+            self.active_text
+        )
         for widget in self.preview_activate_widgets:
             widget.configure(cursor=cursor)
         self.preview_title_label.configure(fg=title_color)
         if hasattr(self, "preview_select_button"):
-            button_state = "normal" if self.preview_requires_confirmation else "disabled"
-            self.preview_select_button.configure(state=button_state)
+            button_text = "Use Preview" if self.preview_requires_confirmation else "Select File"
+            self.preview_select_button.configure(text=button_text, state="normal")
+            if show_select_button:
+                self.preview_select_button.grid()
+            else:
+                self.preview_select_button.grid_remove()
 
     def _get_file_button_tooltip(self) -> str:
         if self.preview_requires_confirmation:
@@ -816,6 +955,198 @@ class LspDestroyerApp:
 
     def _get_exit_button_tooltip(self) -> str:
         return f"Keluar dari aplikasi ({self.config.hotkeys.exit_app})"
+
+    def _current_hotkey_config_from_settings(self) -> HotkeyConfig:
+        return HotkeyConfig(
+            show_main_ui=self.config.hotkeys.show_main_ui,
+            toggle_visibility=self.config.hotkeys.toggle_visibility,
+            open_settings=self.config.hotkeys.open_settings,
+            select_file=self.config.hotkeys.select_file,
+            reset_file=self.config.hotkeys.reset_file,
+            pause_resume=self.hotkey_vars["pause_resume"].get().strip(),
+            toggle_overlay=self.hotkey_vars["toggle_overlay"].get().strip(),
+            exit_app=self.config.hotkeys.exit_app,
+        )
+
+    def _iter_hotkey_entries(
+        self, hotkeys: HotkeyConfig | None = None
+    ) -> list[tuple[str, str]]:
+        hotkeys = hotkeys or self._current_hotkey_config_from_settings()
+        return [
+            ("show_main_ui", hotkeys.show_main_ui),
+            ("toggle_visibility", hotkeys.toggle_visibility),
+            ("open_settings", hotkeys.open_settings),
+            ("select_file", hotkeys.select_file),
+            ("reset_file", hotkeys.reset_file),
+            ("pause_resume", hotkeys.pause_resume),
+            ("toggle_overlay", hotkeys.toggle_overlay),
+            ("exit_app", hotkeys.exit_app),
+        ]
+
+    def _validate_hotkey_config(self, hotkeys: HotkeyConfig) -> None:
+        seen_hotkeys: dict[tuple[int, int], str] = {}
+        for field_name, hotkey_value in self._iter_hotkey_entries(hotkeys):
+            try:
+                modifiers, virtual_key = parse_hotkey_string(hotkey_value)
+            except ValueError as exc:
+                label = self.HOTKEY_LABELS.get(field_name, field_name)
+                raise ValueError(f"Hotkey {label} tidak valid: {exc}") from exc
+
+            if self._is_character_key(virtual_key) and not modifiers:
+                label = self.HOTKEY_LABELS.get(field_name, field_name)
+                raise ValueError(
+                    f"Hotkey {label} harus pakai Ctrl untuk tombol whitelist."
+                )
+            if virtual_key == VK_BACKSPACE and not modifiers:
+                label = self.HOTKEY_LABELS.get(field_name, field_name)
+                raise ValueError(
+                    f"Hotkey {label} tidak bisa memakai Backspace tanpa Ctrl karena tombol itu dipakai buat mundur karakter."
+                )
+
+            combo = (modifiers, virtual_key)
+            if combo in seen_hotkeys:
+                label = self.HOTKEY_LABELS.get(field_name, field_name)
+                raise ValueError(
+                    f"Hotkey {label} bentrok dengan {seen_hotkeys[combo]}."
+                )
+            seen_hotkeys[combo] = self.HOTKEY_LABELS.get(field_name, field_name)
+
+    def _refresh_hotkey_editor_buttons(self) -> None:
+        for field_name, button in self.hotkey_editor_buttons.items():
+            self._style_hotkey_editor_button(
+                button, active=field_name == self.active_hotkey_capture
+            )
+
+    def _begin_hotkey_capture(self, field_name: str) -> None:
+        if self.active_hotkey_capture == field_name:
+            return
+
+        self._cancel_hotkey_capture()
+        self.active_hotkey_capture = field_name
+        self.hotkey_capture_original_value = self.hotkey_vars[field_name].get()
+        self.hotkey_capture_ctrl_only = False
+        self.hotkey_vars[field_name].set("Press a key")
+        self._refresh_hotkey_editor_buttons()
+        self.settings_window.focus_force()
+        button = self.hotkey_editor_buttons.get(field_name)
+        if button is not None:
+            button.focus_set()
+        self.set_status(
+            f"Pilih hotkey baru untuk {self.HOTKEY_LABELS.get(field_name, field_name)}."
+        )
+
+    def _cancel_hotkey_capture(self) -> None:
+        if not self.active_hotkey_capture:
+            return
+
+        field_name = self.active_hotkey_capture
+        if self.hotkey_capture_original_value is not None:
+            self.hotkey_vars[field_name].set(self.hotkey_capture_original_value)
+        self.active_hotkey_capture = None
+        self.hotkey_capture_original_value = None
+        self.hotkey_capture_ctrl_only = False
+        self._refresh_hotkey_editor_buttons()
+
+    def _finish_hotkey_capture(self, field_name: str, hotkey_value: str) -> None:
+        self.hotkey_vars[field_name].set(hotkey_value)
+        self.active_hotkey_capture = None
+        self.hotkey_capture_original_value = None
+        self.hotkey_capture_ctrl_only = False
+        self._refresh_hotkey_editor_buttons()
+        self.set_status(
+            f"Hotkey {self.HOTKEY_LABELS.get(field_name, field_name)} diset ke {hotkey_value}. Simpan settings buat menerapkan."
+        )
+
+    def _extract_hotkey_name_from_event(self, event: tk.Event) -> str | None:
+        keysym = str(getattr(event, "keysym", "")).strip()
+        if not keysym:
+            return None
+        if keysym in {"Control_L", "Control_R", "Control"}:
+            return None
+
+        key_name = VK_CODE_TO_NAME.get(int(getattr(event, "keycode", 0)))
+        if key_name:
+            return key_name
+        return normalize_key_token(keysym)
+
+    def _find_hotkey_conflict(self, field_name: str, hotkey_value: str) -> str | None:
+        modifiers, virtual_key = parse_hotkey_string(hotkey_value)
+        for other_field_name, other_hotkey in self._iter_hotkey_entries():
+            if other_field_name == field_name:
+                continue
+            other_modifiers, other_virtual_key = parse_hotkey_string(other_hotkey)
+            if (modifiers, virtual_key) == (other_modifiers, other_virtual_key):
+                return self.HOTKEY_LABELS.get(other_field_name, other_field_name)
+        return None
+
+    def _handle_hotkey_capture_keypress(self, event: tk.Event) -> str | None:
+        if not self.active_hotkey_capture or not self._window_is_visible(
+            self.settings_window
+        ):
+            return None
+
+        keysym = str(getattr(event, "keysym", "")).strip()
+        if keysym == "Escape":
+            self._cancel_hotkey_capture()
+            self.set_status("Pemilihan hotkey dibatalkan.")
+            return "break"
+
+        if keysym in {"Control_L", "Control_R", "Control"}:
+            self.hotkey_capture_ctrl_only = True
+            self.hotkey_vars[self.active_hotkey_capture].set("Ctrl + ...")
+            return "break"
+
+        ctrl_held = self.hotkey_capture_ctrl_only or bool(
+            int(getattr(event, "state", 0)) & 0x0004
+        )
+        key_name = self._extract_hotkey_name_from_event(event)
+        if not key_name:
+            return "break"
+
+        hotkey_value = f"Ctrl+{key_name}" if ctrl_held else key_name
+        modifiers, virtual_key = parse_hotkey_string(hotkey_value)
+        if self._is_character_key(virtual_key) and not modifiers:
+            self.set_status("Tombol whitelist harus dipakai dengan kombinasi Ctrl.")
+            return "break"
+        if virtual_key == VK_BACKSPACE and not modifiers:
+            self.set_status("Backspace tanpa Ctrl dipakai buat mundur karakter, jadi tidak bisa dijadikan hotkey.")
+            return "break"
+
+        conflict_label = self._find_hotkey_conflict(
+            self.active_hotkey_capture, hotkey_value
+        )
+        if conflict_label:
+            self.set_status(f"Hotkey bentrok dengan {conflict_label}. Pilih kombinasi lain.")
+            return "break"
+
+        self._finish_hotkey_capture(self.active_hotkey_capture, hotkey_value)
+        return "break"
+
+    def _handle_hotkey_capture_keyrelease(self, event: tk.Event) -> str | None:
+        if not self.active_hotkey_capture or not self._window_is_visible(
+            self.settings_window
+        ):
+            return None
+
+        keysym = str(getattr(event, "keysym", "")).strip()
+        if keysym in {"Control_L", "Control_R", "Control"} and self.hotkey_capture_ctrl_only:
+            self._cancel_hotkey_capture()
+            self.set_status("Pemilihan hotkey dibatalkan.")
+            return "break"
+        return "break"
+
+    def _pick_overlay_text_color(self) -> None:
+        current_color = self.overlay_vars["text_color"].get().strip()
+        _rgb, selected_color = colorchooser.askcolor(
+            color=current_color,
+            parent=self.settings_window,
+            title="Pick overlay text color",
+        )
+        if not selected_color:
+            return
+
+        self.overlay_vars["text_color"].set(selected_color)
+        self._refresh_color_picker_button()
 
     def _layout_scroll_canvas(
         self,
@@ -1337,7 +1668,7 @@ class LspDestroyerApp:
         self.preview_select_button = tk.Button(
             preview_header,
             text="Select File",
-            command=self.confirm_preview_file,
+            command=self._handle_primary_file_action,
             relief="flat",
             bd=0,
             highlightthickness=0,
@@ -1349,7 +1680,6 @@ class LspDestroyerApp:
             padx=12,
             pady=5,
             cursor="hand2",
-            state="disabled",
             disabledforeground=MAIN_TEXT_SUBTLE,
         )
         self.preview_select_button.grid(
@@ -1513,22 +1843,24 @@ class LspDestroyerApp:
         hotkey_card, hotkey_body = self._create_card(
             self.settings_scroll_content,
             title="Hotkeys",
-            subtitle="Hotkeys are fixed and cannot be changed.",
+            subtitle="Klik hotkey Pause / Resume atau next overlay buat ganti langsung dari keyboard.",
         )
         hotkey_card.grid(row=0, column=0, sticky="ew", pady=(0, 14))
         hotkey_body.columnconfigure(1, weight=1)
 
         hotkey_display_rows = [
-            ("Open main UI", self.config.hotkeys.show_main_ui),
-            ("Show/hide all UI (except overlay)", self.config.hotkeys.toggle_visibility),
-            ("Open settings", self.config.hotkeys.open_settings),
-            ("Select file", self.config.hotkeys.select_file),
-            ("Reset active file", self.config.hotkeys.reset_file),
-            ("Pause / Resume", self.config.hotkeys.pause_resume),
-            ("Show / hide next overlay", self.config.hotkeys.toggle_overlay),
-            ("Exit app", self.config.hotkeys.exit_app),
+            ("Open main UI", self.config.hotkeys.show_main_ui, None),
+            ("Show/hide all UI (except overlay)", self.config.hotkeys.toggle_visibility, None),
+            ("Open settings", self.config.hotkeys.open_settings, None),
+            ("Select file", self.config.hotkeys.select_file, None),
+            ("Reset active file", self.config.hotkeys.reset_file, None),
+            ("Pause / Resume", self.hotkey_vars["pause_resume"], "pause_resume"),
+            ("Show / hide next overlay", self.hotkey_vars["toggle_overlay"], "toggle_overlay"),
+            ("Exit app", self.config.hotkeys.exit_app, None),
         ]
-        for row_index, (label, hotkey_value) in enumerate(hotkey_display_rows):
+        for row_index, (label, hotkey_value, editable_field) in enumerate(
+            hotkey_display_rows
+        ):
             tk.Label(
                 hotkey_body,
                 text=label,
@@ -1537,14 +1869,28 @@ class LspDestroyerApp:
                 font=FONT_BODY,
                 anchor="w",
             ).grid(row=row_index, column=0, sticky="w", padx=(0, 12), pady=8)
-            tk.Label(
+            if editable_field is None:
+                tk.Label(
+                    hotkey_body,
+                    text=hotkey_value,
+                    bg=hotkey_body.cget("bg"),
+                    fg=TEXT_PRIMARY,
+                    font=FONT_BODY,
+                    anchor="w",
+                ).grid(row=row_index, column=1, sticky="w", pady=8)
+                continue
+
+            button = tk.Button(
                 hotkey_body,
-                text=hotkey_value,
-                bg=hotkey_body.cget("bg"),
-                fg=TEXT_PRIMARY,
-                font=FONT_BODY,
-                anchor="w",
-            ).grid(row=row_index, column=1, sticky="w", pady=8)
+                textvariable=hotkey_value,
+                command=lambda field_name=editable_field: self._begin_hotkey_capture(
+                    field_name
+                ),
+                takefocus=True,
+            )
+            self._style_hotkey_editor_button(button)
+            button.grid(row=row_index, column=1, sticky="ew", pady=8)
+            self.hotkey_editor_buttons[editable_field] = button
 
         overlay_card, overlay_body = self._create_card(
             self.settings_scroll_content,
@@ -1553,26 +1899,94 @@ class LspDestroyerApp:
         overlay_card.grid(row=2, column=0, sticky="ew")
         overlay_body.columnconfigure(1, weight=1)
 
-        overlay_rows = [
-            ("Font size", "font_size"),
-            ("Opacity (0.2 - 1.0)", "opacity"),
-            ("Horizontal padding", "padding_x"),
-            ("Vertical padding", "padding_y"),
-            ("Text color", "text_color"),
-            ("Total next characters", "next_char_count"),
-        ]
-        for row_index, (label, key) in enumerate(overlay_rows):
-            tk.Label(
-                overlay_body,
-                text=label,
-                bg=overlay_body.cget("bg"),
-                fg=TEXT_MUTED,
-                font=FONT_BODY,
-                anchor="w",
-            ).grid(row=row_index, column=0, sticky="w", padx=(0, 12), pady=8)
-            entry = tk.Entry(overlay_body, textvariable=self.overlay_vars[key])
-            self._style_entry_widget(entry)
-            entry.grid(row=row_index, column=1, sticky="ew", pady=8)
+        self._create_slider_setting(
+            overlay_body,
+            row=0,
+            label="Font size",
+            variable=self.overlay_vars["font_size"],
+            value_variable=self.overlay_value_vars["font_size"],
+            from_=6,
+            to=48,
+            resolution=1,
+        )
+        self._create_slider_setting(
+            overlay_body,
+            row=1,
+            label="Opacity (0.2 - 1.0)",
+            variable=self.overlay_vars["opacity"],
+            value_variable=self.overlay_value_vars["opacity"],
+            from_=0.2,
+            to=1.0,
+            resolution=0.01,
+        )
+
+        tk.Label(
+            overlay_body,
+            text="Horizontal padding",
+            bg=overlay_body.cget("bg"),
+            fg=TEXT_MUTED,
+            font=FONT_BODY,
+            anchor="w",
+        ).grid(row=2, column=0, sticky="w", padx=(0, 12), pady=8)
+        padding_x_entry = tk.Entry(overlay_body, textvariable=self.overlay_vars["padding_x"])
+        self._style_entry_widget(padding_x_entry)
+        padding_x_entry.grid(row=2, column=1, sticky="ew", pady=8)
+
+        self._create_slider_setting(
+            overlay_body,
+            row=3,
+            label="Vertical padding",
+            variable=self.overlay_vars["padding_y"],
+            value_variable=self.overlay_value_vars["padding_y"],
+            from_=0,
+            to=40,
+            resolution=1,
+        )
+
+        tk.Label(
+            overlay_body,
+            text="Text color",
+            bg=overlay_body.cget("bg"),
+            fg=TEXT_MUTED,
+            font=FONT_BODY,
+            anchor="w",
+        ).grid(row=4, column=0, sticky="w", padx=(0, 12), pady=8)
+        color_picker_shell = tk.Frame(overlay_body, bg=overlay_body.cget("bg"), bd=0)
+        color_picker_shell.grid(row=4, column=1, sticky="ew", pady=8)
+        color_picker_shell.columnconfigure(0, weight=0)
+        self.overlay_color_button = self._create_action_button(
+            color_picker_shell,
+            text=self.overlay_vars["text_color"].get(),
+            command=self._pick_overlay_text_color,
+        )
+        self.overlay_color_button.grid(row=0, column=0, sticky="w")
+        self.overlay_color_swatch = tk.Frame(
+            color_picker_shell,
+            width=24,
+            height=24,
+            bg=self.overlay_vars["text_color"].get(),
+            highlightthickness=1,
+            highlightbackground=mix_color(CARD_BORDER, CARD_BACKGROUND_ALT, 0.72),
+            bd=0,
+        )
+        self.overlay_color_swatch.grid(row=0, column=1, sticky="w", padx=(10, 0))
+        self.overlay_color_swatch.grid_propagate(False)
+
+        tk.Label(
+            overlay_body,
+            text="Total next characters",
+            bg=overlay_body.cget("bg"),
+            fg=TEXT_MUTED,
+            font=FONT_BODY,
+            anchor="w",
+        ).grid(row=5, column=0, sticky="w", padx=(0, 12), pady=8)
+        next_char_entry = tk.Entry(
+            overlay_body, textvariable=self.overlay_vars["next_char_count"]
+        )
+        self._style_entry_widget(next_char_entry)
+        next_char_entry.grid(row=5, column=1, sticky="ew", pady=8)
+        self._refresh_hotkey_editor_buttons()
+        self._refresh_color_picker_button()
 
         actions = tk.Frame(container, bg=SURFACE_BACKGROUND)
         actions.grid(row=2, column=0, sticky="ew")
@@ -1881,6 +2295,9 @@ class LspDestroyerApp:
             self.root.after(80, self._process_ui_queue)
 
     def _handle_ui_queue_action(self, action_name: str, payload: Any) -> None:
+        if self.active_hotkey_capture and payload == "native_hotkey":
+            return
+
         if payload == "native_hotkey" and not self._mark_hotkey_trigger(action_name):
             return
 
@@ -2089,7 +2506,7 @@ class LspDestroyerApp:
         self._refresh_overlay()
 
     def hide_settings_window(self) -> None:
-        self.active_hotkey_capture = None
+        self._cancel_hotkey_capture()
         self.settings_window.withdraw()
         self._sync_window_stack()
         self._refresh_overlay()
@@ -2205,24 +2622,42 @@ class LspDestroyerApp:
 
     def restore_default_settings(self) -> None:
         defaults = AppConfig()
-        self.overlay_vars["font_size"].set(str(defaults.overlay.font_size))
-        self.overlay_vars["opacity"].set(str(defaults.overlay.opacity))
-        self.overlay_vars["padding_x"].set(str(defaults.overlay.padding_x))
-        self.overlay_vars["padding_y"].set(str(defaults.overlay.padding_y))
+        self._cancel_hotkey_capture()
+        self.overlay_vars["font_size"].set(defaults.overlay.font_size)
+        self.overlay_vars["opacity"].set(defaults.overlay.opacity)
+        self.overlay_vars["padding_x"].set(defaults.overlay.padding_x)
+        self.overlay_vars["padding_y"].set(defaults.overlay.padding_y)
         self.overlay_vars["text_color"].set(defaults.overlay.text_color)
-        self.overlay_vars["next_char_count"].set(str(defaults.overlay.next_char_count))
+        self.overlay_vars["next_char_count"].set(defaults.overlay.next_char_count)
+        self.hotkey_vars["pause_resume"].set(defaults.hotkeys.pause_resume)
+        self.hotkey_vars["toggle_overlay"].set(defaults.hotkeys.toggle_overlay)
         self.config.overlay.x_position = -1
         self.config.overlay.y_position = -1
+        self._sync_overlay_value_labels()
+        self._refresh_hotkey_editor_buttons()
+        self._refresh_color_picker_button()
 
     def _sync_settings_vars_from_config(self) -> None:
-        self.overlay_vars["font_size"].set(str(self.config.overlay.font_size))
-        self.overlay_vars["opacity"].set(str(self.config.overlay.opacity))
-        self.overlay_vars["padding_x"].set(str(self.config.overlay.padding_x))
-        self.overlay_vars["padding_y"].set(str(self.config.overlay.padding_y))
+        self._cancel_hotkey_capture()
+        self.overlay_vars["font_size"].set(self.config.overlay.font_size)
+        self.overlay_vars["opacity"].set(self.config.overlay.opacity)
+        self.overlay_vars["padding_x"].set(self.config.overlay.padding_x)
+        self.overlay_vars["padding_y"].set(self.config.overlay.padding_y)
         self.overlay_vars["text_color"].set(self.config.overlay.text_color)
-        self.overlay_vars["next_char_count"].set(str(self.config.overlay.next_char_count))
+        self.overlay_vars["next_char_count"].set(self.config.overlay.next_char_count)
+        self.hotkey_vars["pause_resume"].set(self.config.hotkeys.pause_resume)
+        self.hotkey_vars["toggle_overlay"].set(self.config.hotkeys.toggle_overlay)
+        self._sync_overlay_value_labels()
+        self._refresh_hotkey_editor_buttons()
+        self._refresh_color_picker_button()
 
     def save_settings(self) -> None:
+        if self.active_hotkey_capture:
+            messagebox.showerror(
+                APP_TITLE, "Selesaikan dulu pemilihan hotkey sebelum menyimpan."
+            )
+            return
+
         try:
             overlay = OverlayConfig(
                 font_size=int(self.overlay_vars["font_size"].get()),
@@ -2234,6 +2669,7 @@ class LspDestroyerApp:
                 text_color=self.overlay_vars["text_color"].get().strip(),
                 next_char_count=int(self.overlay_vars["next_char_count"].get()),
             )
+            hotkeys = self._current_hotkey_config_from_settings()
         except ValueError:
             messagebox.showerror(
                 APP_TITLE, "Overlay setting angka harus berisi angka yang valid."
@@ -2261,8 +2697,14 @@ class LspDestroyerApp:
             )
             return
 
+        try:
+            self._validate_hotkey_config(hotkeys)
+        except ValueError as exc:
+            messagebox.showerror(APP_TITLE, str(exc))
+            return
+
         self.config = AppConfig(
-            hotkeys=self.config.hotkeys,
+            hotkeys=hotkeys,
             overlay=overlay,
         )
         save_config(self.config)
